@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Dict
 
 from config import Config
 from sheets_reader import SheetsReader
@@ -53,6 +53,10 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
     
+    # 管理者のメッセージは無視
+    if message.author.id == Config.ADMIN_USER_ID:
+        return
+    
     # スプレッドシートURLの検知
     if 'docs.google.com/spreadsheets' in message.content:
         logger.info(f"スプレッドシートURLを検知: {message.author.name} (チャンネル: {message.channel.name})")
@@ -63,9 +67,7 @@ async def on_message(message: discord.Message):
             logger.warning("URLの抽出に失敗しました")
             return
         
-        # 処理中メッセージを送信
-        processing_msg = await message.channel.send("🔍 スプレッドシートを分析中です...")
-        
+        # チャンネルにはメッセージを送らず、静かに処理
         try:
             # スプレッドシート読み取り
             sheets_reader = SheetsReader()
@@ -75,32 +77,26 @@ async def on_message(message: discord.Message):
             analyzer = GeminiAnalyzer()
             report = analyzer.analyze(sheets_data)
             
-            # 管理者にDM送信
+            # 管理者にDM送信（分析結果、投稿者情報を含む）
             await _send_dm_to_admin(message, url, report)
             
-            # 処理完了メッセージ
-            await processing_msg.edit(content="✅ 分析が完了しました。管理者にDMでレポートを送信しました。")
             logger.info("分析処理が正常に完了しました")
             
         except ValueError as e:
-            error_msg = f"❌ エラー: {str(e)}"
-            await processing_msg.edit(content=error_msg)
             logger.error(f"エラー: {str(e)}")
+            # エラー時も管理者に通知
+            try:
+                await _send_error_to_admin(message, url, str(e))
+            except Exception as admin_error:
+                logger.error(f"管理者へのエラー通知失敗: {str(admin_error)}")
             
         except Exception as e:
-            error_msg = f"❌ 分析処理中にエラーが発生しました: {str(e)}"
-            await processing_msg.edit(content=error_msg)
             logger.error(f"分析処理エラー: {str(e)}")
-            
-            # 投稿者にも通知
+            # エラー時も管理者に通知
             try:
-                await message.author.send(
-                    f"スプレッドシートの分析中にエラーが発生しました。\n"
-                    f"エラー内容: {str(e)}\n"
-                    f"スプレッドシートURL: {url}"
-                )
-            except discord.Forbidden:
-                logger.warning("投稿者へのDM送信に失敗しました（DMが閉じられている可能性があります）")
+                await _send_error_to_admin(message, url, str(e))
+            except Exception as admin_error:
+                logger.error(f"管理者へのエラー通知失敗: {str(admin_error)}")
     
     # コマンド処理を継続
     await bot.process_commands(message)
@@ -130,7 +126,7 @@ def _extract_url(text: str) -> Optional[str]:
 
 async def _send_dm_to_admin(original_message: discord.Message, url: str, report: str):
     """
-    管理者にDMでレポートを送信
+    管理者にDMでレポートを送信（投稿者情報、分析結果を含む）
     
     Args:
         original_message: 元のDiscordメッセージ
@@ -140,27 +136,33 @@ async def _send_dm_to_admin(original_message: discord.Message, url: str, report:
     try:
         admin_user = await bot.fetch_user(Config.ADMIN_USER_ID)
         
-        # Discordのメッセージ長制限（2000文字）を考慮して分割送信
-        max_length = 1900  # 余裕を持たせる
-        
-        # ヘッダー部分
+        # ヘッダー部分（投稿者情報のみ）
         header = (
             f"# SEO構成案 分析レポート\n\n"
+            f"## 📋 投稿情報\n"
             f"**投稿者**: {original_message.author.mention} ({original_message.author.name})\n"
+            f"**投稿者ID**: {original_message.author.id}\n"
             f"**チャンネル**: {original_message.channel.mention} ({original_message.channel.name})\n"
-            f"**スプレッドシートURL**: {url}\n\n"
+            f"**スプレッドシートURL**: {url}\n"
+            f"**投稿日時**: {original_message.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
             f"---\n\n"
+            f"## 📊 修正箇所\n\n"
         )
         
-        # レポートが長い場合は分割
-        if len(header + report) <= max_length:
+        # メッセージを組み立て（文字数制限なし、分割送信）
+        full_message = header + report
+        
+        # Discordの2000文字制限を考慮して分割送信
+        max_length = 2000
+        if len(full_message) <= max_length:
             # 1回で送信可能
-            await admin_user.send(header + report)
+            await admin_user.send(full_message)
         else:
             # ヘッダーを先に送信
             await admin_user.send(header)
+            await asyncio.sleep(0.5)
             
-            # レポートを分割して送信
+            # レポートを分割して送信（文字数制限なし、すべて送信）
             report_chunks = [report[i:i+max_length] for i in range(0, len(report), max_length)]
             for chunk in report_chunks:
                 await admin_user.send(chunk)
@@ -174,6 +176,34 @@ async def _send_dm_to_admin(original_message: discord.Message, url: str, report:
         logger.error(f"管理者 ({Config.ADMIN_USER_ID}) のDMが閉じられています")
     except Exception as e:
         logger.error(f"管理者へのDM送信エラー: {str(e)}")
+
+
+async def _send_error_to_admin(original_message: discord.Message, url: str, error_message: str):
+    """
+    エラー発生時に管理者に通知
+    
+    Args:
+        original_message: 元のDiscordメッセージ
+        url: スプレッドシートURL
+        error_message: エラーメッセージ
+    """
+    try:
+        admin_user = await bot.fetch_user(Config.ADMIN_USER_ID)
+        
+        error_report = (
+            f"# ❌ 分析処理エラー\n\n"
+            f"**投稿者**: {original_message.author.mention} ({original_message.author.name})\n"
+            f"**チャンネル**: {original_message.channel.mention} ({original_message.channel.name})\n"
+            f"**スプレッドシートURL**: {url}\n"
+            f"**投稿日時**: {original_message.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"**エラー内容**:\n```\n{error_message}\n```"
+        )
+        
+        await admin_user.send(error_report)
+        logger.info(f"管理者 ({admin_user.name}) にエラー通知を送信しました")
+        
+    except Exception as e:
+        logger.error(f"管理者へのエラー通知送信エラー: {str(e)}")
 
 
 def main():

@@ -4,6 +4,7 @@ Google SheetsのデータをGemini APIに送信し、SEO分析レポートを生
 """
 import google.generativeai as genai
 from typing import Dict
+from datetime import datetime
 from config import Config
 
 
@@ -14,7 +15,7 @@ class GeminiAnalyzer:
         """初期化：Gemini APIを設定"""
         genai.configure(api_key=Config.GEMINI_API_KEY)
         self.model = genai.GenerativeModel(
-            model_name='gemini-1.5-pro',
+            model_name='gemini-2.5-pro',
             system_instruction=self._get_system_instruction()
         )
     
@@ -44,12 +45,40 @@ class GeminiAnalyzer:
    - 他サイトの劣化コピーになっていないか
    - 独自の価値や視点が含まれているか
 
-レポートはMarkdown形式で出力し、以下の形式に従ってください：
-- 判定: 合格 / 要修正 / 不合格
-- 各チェック項目ごとの詳細な評価
-- 具体的な改善提案
+重要な指示：
+- 良い点や評価できる箇所へのコメントは一切不要です
+- 修正が必要な箇所のみを指摘してください
+- 問題がない場合は「修正箇所なし」と簡潔に記載してください
+- 日付に関する分析を行う際は、必ず提供された「現在の日時」を基準として判断してください
+- スプレッドシート内の日付や時期的な表現を評価する際は、現在の日付を参照して適切性を判断してください
 
-厳格かつ建設的なフィードバックを提供してください。"""
+レポートはMarkdown形式で出力し、以下の形式に厳密に従ってください：
+
+```
+判定: 合格 / 要修正 / 不合格
+
+## [見出しタイトル1]
+修正内容の説明
+
+## [見出しタイトル2]
+修正内容の説明
+```
+
+形式のルール：
+- 各修正箇所は「## 見出しタイトル」で始める
+- 見出しタイトルは、修正が必要な具体的な箇所や問題点を簡潔に表現する（例：「## H2見出し「〇〇」の検索意図との不一致」）
+- 見出しの下に、その箇所の修正内容を具体的に記載する
+- 複数の修正箇所がある場合は、それぞれを「## 見出しタイトル」で区切る
+- 見出しタイトルと修正内容を明確に分けて記載する
+
+コメントの文体：
+- すべてのコメントは「ですます調」で記載してください
+- 修正指示は「〜してください」「〜することをおすすめします」などの丁寧な表現を使用してください
+- 構成作成者へのコメントとして、分かりやすく丁寧に伝えることを心がけてください
+- 例：「この見出しは検索意図と一致していません。より具体的な内容に修正してください。」
+- 例：「キーワードの配置が不自然です。自然な文章になるよう調整することをおすすめします。」
+
+簡潔で実用的なフィードバックを提供してください。"""
     
     def _format_sheets_data(self, sheets_data: Dict[str, str]) -> str:
         """
@@ -61,7 +90,12 @@ class GeminiAnalyzer:
         Returns:
             str: 整形されたテキスト
         """
-        formatted = "=== SEO構成案データ ===\n\n"
+        # 現在の日付を取得
+        current_date = datetime.now().strftime('%Y年%m月%d日')
+        current_datetime = datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')
+        
+        formatted = f"=== 分析日時 ===\n現在の日時: {current_datetime}\n現在の日付: {current_date}\n\n"
+        formatted += "=== SEO構成案データ ===\n\n"
         
         formatted += sheets_data.get("outline", "")
         formatted += sheets_data.get("keywords", "")

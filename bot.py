@@ -1,6 +1,6 @@
 """
 Discord Botメインモジュール
-メッセージを監視し、GoogleスプレッドシートのURLを検知して分析処理を実行します。
+メッセージを監視し、GoogleドキュメントのURLを検知して分析処理を実行します。
 """
 import discord
 from discord.ext import commands
@@ -9,12 +9,12 @@ import logging
 from typing import Optional, Dict
 
 from config import Config
-from sheets_reader import SheetsReader
+from document_reader import DocumentReader
 from gemini_analyzer import GeminiAnalyzer
 
 # ロギング設定
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # デバッグモードに変更
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -31,6 +31,12 @@ async def on_ready():
     logger.info(f'{bot.user} としてログインしました')
     logger.info(f'Bot ID: {bot.user.id}')
     
+    # 参加しているサーバー数を表示
+    guild_count = len(bot.guilds)
+    logger.info(f'参加しているサーバー数: {guild_count}')
+    for guild in bot.guilds:
+        logger.info(f'  - {guild.name} (ID: {guild.id})')
+    
     # 設定の検証
     if not Config.validate():
         logger.error("必須設定が不足しています。.envファイルを確認してください。")
@@ -44,6 +50,8 @@ async def on_ready():
         logger.warning(f"管理者ユーザーID {Config.ADMIN_USER_ID} が見つかりません。")
     except Exception as e:
         logger.error(f"管理者ユーザーの取得エラー: {str(e)}")
+    
+    logger.info("Botが正常に起動しました。メッセージの監視を開始します。")
 
 
 @bot.event
@@ -57,9 +65,12 @@ async def on_message(message: discord.Message):
     if message.author.id == Config.ADMIN_USER_ID:
         return
     
-    # スプレッドシートURLの検知
-    if 'docs.google.com/spreadsheets' in message.content:
-        logger.info(f"スプレッドシートURLを検知: {message.author.name} (チャンネル: {message.channel.name})")
+    # デバッグ: メッセージを受信したことをログに記録
+    logger.debug(f"メッセージを受信: {message.author.name} (チャンネル: {message.channel.name}) - 内容: {message.content[:100]}")
+    
+    # ドキュメントURLの検知（様々な形式に対応）
+    if 'docs.google.com/document' in message.content or 'drive.google.com' in message.content:
+        logger.info(f"ドキュメントURLを検知: {message.author.name} (チャンネル: {message.channel.name})")
         
         # URLを抽出
         url = _extract_url(message.content)
@@ -69,13 +80,13 @@ async def on_message(message: discord.Message):
         
         # チャンネルにはメッセージを送らず、静かに処理
         try:
-            # スプレッドシート読み取り
-            sheets_reader = SheetsReader()
-            sheets_data = sheets_reader.read_all_sheets(url)
+            # ドキュメント読み取り
+            document_reader = DocumentReader()
+            document_content = document_reader.read_document(url)
             
             # Gemini分析
             analyzer = GeminiAnalyzer()
-            report = analyzer.analyze(sheets_data)
+            report = analyzer.analyze(document_content)
             
             # 管理者にDM送信（分析結果、投稿者情報を含む）
             await _send_dm_to_admin(message, url, report)
@@ -104,7 +115,7 @@ async def on_message(message: discord.Message):
 
 def _extract_url(text: str) -> Optional[str]:
     """
-    テキストからGoogleスプレッドシートのURLを抽出
+    テキストからGoogleドキュメントのURLを抽出
     
     Args:
         text: メッセージテキスト
@@ -114,13 +125,23 @@ def _extract_url(text: str) -> Optional[str]:
     """
     import re
     
-    # URLパターンを検索
-    url_pattern = r'https?://docs\.google\.com/spreadsheets/[^\s<>"{}|\\^`\[\]]+'
-    match = re.search(url_pattern, text)
+    # 様々なURL形式に対応
+    url_patterns = [
+        r'https?://docs\.google\.com/document/d/[a-zA-Z0-9-_]+[^\s<>"{}|\\^`\[\]]*',
+        r'https?://docs\.google\.com/document/[^\s<>"{}|\\^`\[\]]+',
+        r'https?://drive\.google\.com/file/d/[a-zA-Z0-9-_]+[^\s<>"{}|\\^`\[\]]*',
+    ]
     
-    if match:
-        return match.group(0)
+    for pattern in url_patterns:
+        match = re.search(pattern, text)
+        if match:
+            url = match.group(0)
+            # URLの末尾の不要な文字を削除
+            url = url.rstrip('.,;:!?)')
+            logger.debug(f"URLを抽出: {url}")
+            return url
     
+    logger.debug("URLの抽出に失敗")
     return None
 
 
@@ -130,7 +151,7 @@ async def _send_dm_to_admin(original_message: discord.Message, url: str, report:
     
     Args:
         original_message: 元のDiscordメッセージ
-        url: スプレッドシートURL
+        url: ドキュメントURL
         report: 分析レポート
     """
     try:
@@ -138,35 +159,30 @@ async def _send_dm_to_admin(original_message: discord.Message, url: str, report:
         
         # ヘッダー部分（投稿者情報のみ）
         header = (
-            f"# SEO構成案 分析レポート\n\n"
+            f"# 初稿案 分析レポート\n\n"
             f"## 📋 投稿情報\n"
             f"**投稿者**: {original_message.author.mention} ({original_message.author.name})\n"
             f"**投稿者ID**: {original_message.author.id}\n"
             f"**チャンネル**: {original_message.channel.mention} ({original_message.channel.name})\n"
-            f"**スプレッドシートURL**: {url}\n"
+            f"**ドキュメントURL**: {url}\n"
             f"**投稿日時**: {original_message.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
             f"---\n\n"
             f"## 📊 修正箇所\n\n"
         )
         
-        # メッセージを組み立て（文字数制限なし、分割送信）
+        # メッセージを組み立て（1回で送信）
         full_message = header + report
         
-        # Discordの2000文字制限を考慮して分割送信
-        max_length = 2000
-        if len(full_message) <= max_length:
-            # 1回で送信可能
-            await admin_user.send(full_message)
+        # 2000文字を超える場合はファイルとして送信
+        if len(full_message) > 2000:
+            # ファイルとして送信
+            import io
+            file_content = io.BytesIO(full_message.encode('utf-8'))
+            file = discord.File(file_content, filename='analysis_report.md')
+            await admin_user.send(content="初稿案 分析レポート", file=file)
         else:
-            # ヘッダーを先に送信
-            await admin_user.send(header)
-            await asyncio.sleep(0.5)
-            
-            # レポートを分割して送信（文字数制限なし、すべて送信）
-            report_chunks = [report[i:i+max_length] for i in range(0, len(report), max_length)]
-            for chunk in report_chunks:
-                await admin_user.send(chunk)
-                await asyncio.sleep(0.5)  # レート制限対策
+            # 通常のメッセージとして送信
+            await admin_user.send(full_message)
         
         logger.info(f"管理者 ({admin_user.name}) にDMを送信しました")
         
@@ -184,22 +200,35 @@ async def _send_error_to_admin(original_message: discord.Message, url: str, erro
     
     Args:
         original_message: 元のDiscordメッセージ
-        url: スプレッドシートURL
+        url: ドキュメントURL
         error_message: エラーメッセージ
     """
     try:
         admin_user = await bot.fetch_user(Config.ADMIN_USER_ID)
         
-        error_report = (
+        # ヘッダー部分
+        header = (
             f"# ❌ 分析処理エラー\n\n"
             f"**投稿者**: {original_message.author.mention} ({original_message.author.name})\n"
             f"**チャンネル**: {original_message.channel.mention} ({original_message.channel.name})\n"
-            f"**スプレッドシートURL**: {url}\n"
+            f"**ドキュメントURL**: {url}\n"
             f"**投稿日時**: {original_message.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"**エラー内容**:\n```\n{error_message}\n```"
+            f"**エラー内容**:\n"
         )
         
-        await admin_user.send(error_report)
+        error_with_header = header + f"```\n{error_message}\n```"
+        
+        # 2000文字を超える場合はファイルとして送信
+        if len(error_with_header) > 2000:
+            # ファイルとして送信
+            import io
+            file_content = io.BytesIO(error_with_header.encode('utf-8'))
+            file = discord.File(file_content, filename='error_report.md')
+            await admin_user.send(content="分析処理エラー", file=file)
+        else:
+            # 通常のメッセージとして送信
+            await admin_user.send(error_with_header)
+        
         logger.info(f"管理者 ({admin_user.name}) にエラー通知を送信しました")
         
     except Exception as e:

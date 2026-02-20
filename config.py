@@ -5,8 +5,14 @@
 import os
 from dotenv import load_dotenv
 
-# .envファイルから環境変数を読み込む
-load_dotenv()
+# .envファイルから環境変数を読み込む（エラーが発生しても続行）
+try:
+    load_dotenv()
+except (PermissionError, IOError) as e:
+    # .envファイルへのアクセス権限がない場合や読み取りエラーの場合
+    # 環境変数が既に設定されている場合はそのまま使用
+    print(f"警告: .envファイルの読み込みに失敗しました: {e}")
+    print("環境変数が直接設定されている場合はそのまま使用します。")
 
 
 class Config:

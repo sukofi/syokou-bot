@@ -1,0 +1,25 @@
+/Users/sukofi/opt/anaconda3/lib/python3.9/site-packages/google/api_core/_python_version_support.py:246: FutureWarning: You are using a non-supported Python version (3.9.13). Google will not post any further updates to google.api_core supporting this Python version. Please upgrade to the latest Python version, or at least Python 3.10, and then update google.api_core.
+  warnings.warn(message, FutureWarning)
+/Users/sukofi/Desktop/syokou-bot/gemini_analyzer.py:5: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+2026-02-20 21:08:56,825 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-20 21:08:56,826 - discord.client - DEBUG - on_ready has successfully been registered as an event
+2026-02-20 21:08:56,826 - discord.client - DEBUG - on_message has successfully been registered as an event
+2026-02-20 21:08:56,826 - asyncio - DEBUG - Using selector: KqueueSelector
+[2026-02-20 21:08:56] [INFO    ] discord.client: logging in using static token
+2026-02-20 21:08:56,827 - discord.client - INFO - logging in using static token
+[2026-02-20 21:08:58] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: 9f733adaa52d479b5bfc6e936f747c06).
+2026-02-20 21:08:58,170 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 9f733adaa52d479b5bfc6e936f747c06).
+2026-02-20 21:09:00,174 - __main__ - INFO - syokou-bot#8481 としてログインしました
+2026-02-20 21:09:00,175 - __main__ - INFO - Bot ID: 1474369446733811793
+2026-02-20 21:09:00,175 - __main__ - INFO - 参加しているサーバー数: 1
+2026-02-20 21:09:00,175 - __main__ - INFO -   - 買取系ライターチーム (ID: 989088900477780058)
+2026-02-20 21:09:00,474 - __main__ - INFO - 管理者ユーザー: webdirector_sukofi (ID: 965085512861900800)
+2026-02-20 21:09:00,475 - __main__ - INFO - Botが正常に起動しました。メッセージの監視を開始します。

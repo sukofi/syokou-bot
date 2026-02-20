@@ -2,6 +2,7 @@
 Google Sheets読み取りモジュール
 スプレッドシートのURLからデータを抽出し、テキスト形式で整形して返却します。
 """
+import os
 import re
 import gspread
 from google.oauth2.service_account import Credentials
@@ -19,15 +20,50 @@ class SheetsReader:
                 'https://www.googleapis.com/auth/spreadsheets.readonly',
                 'https://www.googleapis.com/auth/drive.readonly'
             ]
+            # ファイルパスを絶対パスに変換
+            json_path = Config.GOOGLE_SERVICE_ACCOUNT_JSON
+            
+            # 絶対パスでない場合、複数のパスを試す
+            if not os.path.isabs(json_path):
+                # 試すパスのリスト
+                possible_paths = [
+                    # プロジェクトルート（sheets_reader.pyと同じディレクトリ）
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), json_path),
+                    # 現在の作業ディレクトリ
+                    os.path.join(os.getcwd(), json_path),
+                    # 相対パスのまま（既にプロジェクトルートにいる場合）
+                    json_path
+                ]
+                
+                # 存在するパスを探す
+                json_path = None
+                for path in possible_paths:
+                    if os.path.exists(path) and os.path.isfile(path):
+                        json_path = os.path.abspath(path)
+                        break
+                
+                # どのパスでも見つからなかった場合
+                if json_path is None:
+                    raise FileNotFoundError(
+                        f"サービスアカウントJSONファイルが見つかりません: {Config.GOOGLE_SERVICE_ACCOUNT_JSON}\n"
+                        f"試したパス: {', '.join([os.path.abspath(p) for p in possible_paths])}\n"
+                        f"現在の作業ディレクトリ: {os.getcwd()}"
+                    )
+            else:
+                # 絶対パスの場合、存在確認
+                if not os.path.exists(json_path) or not os.path.isfile(json_path):
+                    raise FileNotFoundError(
+                        f"サービスアカウントJSONファイルが見つかりません: {json_path}"
+                    )
+                json_path = os.path.abspath(json_path)
+            
             creds = Credentials.from_service_account_file(
-                Config.GOOGLE_SERVICE_ACCOUNT_JSON,
+                json_path,
                 scopes=scopes
             )
             self.client = gspread.authorize(creds)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"サービスアカウントJSONファイルが見つかりません: {Config.GOOGLE_SERVICE_ACCOUNT_JSON}"
-            )
+            raise
         except Exception as e:
             raise Exception(f"Google Sheets認証エラー: {str(e)}")
     

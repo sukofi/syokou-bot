@@ -14,7 +14,7 @@ class GeminiAnalyzer:
         """初期化：Gemini APIを設定"""
         genai.configure(api_key=Config.GEMINI_API_KEY)
         self.model = genai.GenerativeModel(
-            model_name='gemini-2.5-pro',
+            model_name='gemini-2.0-flash',
             system_instruction=self._get_system_instruction()
         )
     
